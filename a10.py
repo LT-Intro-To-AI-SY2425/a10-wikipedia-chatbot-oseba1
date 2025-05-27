@@ -43,14 +43,6 @@ def get_birth_date(name: str) -> str:
     match = get_match(infobox_text, pattern, error_text)
     return match.group("birth")
 
-def get_country_capital(country_name: str) -> str:
-    try:
-        infobox_text = clean_text(get_first_infobox_text(get_page_html(country_name)))
-    except Exception as e:
-        raise AttributeError(f"Could not retrieve page or infobox for {country_name}: {e}")
-    pattern = r"Capital\s*(?:\[\d+\])?\s*(?P<capital>[A-Za-z\s,\(\)\-]+)"
-    match = get_match(infobox_text, pattern, "Page infobox has no capital city information")
-    return match.group("capital").strip()
 
 def get_country_population(country_name: str) -> str:
     try:
@@ -98,6 +90,26 @@ def country_languages(matches: List[str]) -> List[str]:
         return [f"The official language(s) of {matches[0]}: {', '.join(languages)}"]
     except AttributeError as e:
         return [f"Could not find language info: {e}"]
+def country_capital(matches: List[str]) -> List[str]:
+    try:
+        capital = get_country_capital(" ".join(matches))
+        return [f"The capital of {matches[0]} is {capital}"]
+    except AttributeError as e:
+        return [f"Could not find capital: {e}"]
+
+def country_population(matches: List[str]) -> List[str]:
+    try:
+        pop = get_country_population(" ".join(matches))
+        return [f"The population of {matches[0]} is {pop}"]
+    except AttributeError as e:
+        return [f"Could not find population: {e}"]
+
+def country_languages(matches: List[str]) -> List[str]:
+    try:
+        languages = get_country_languages(" ".join(matches))
+        return [f"The official language(s) of {matches[0]}: {', '.join(languages)}"]
+    except AttributeError as e:
+        return [f"Could not find language info: {e}"]
 
 def bye_action(dummy: List[str]) -> None:
     raise KeyboardInterrupt
@@ -108,7 +120,14 @@ Action = Callable[[List[str]], List[Any]]
 pa_list: List[Tuple[Pattern, Action]] = [
     ("when was % born".split(), birth_date),
     ("what is %'s birth date".split(), birth_date),
+    ("what is %'s birth date".split(), birth_date),
     ("what is the polar radius of %".split(), polar_radius),
+    ("how big is %".split(), polar_radius),
+    ("what is the capital of %".split(), country_capital),
+    ("how many people live in %".split(), country_population),
+    ("what language is spoken in %".split(), country_languages),
+    ("what are the official languages of %".split(), country_languages),
+    (["bye"], bye_action)
     ("how big is %".split(), polar_radius),
     ("what is the capital of %".split(), country_capital),
     ("how many people live in %".split(), country_population),
