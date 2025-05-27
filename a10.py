@@ -1,190 +1,134 @@
-import re, string, calendar
+import re, string
 from wikipedia import WikipediaPage
 import wikipedia
 from bs4 import BeautifulSoup
-from nltk import word_tokenize, pos_tag, ne_chunk
-from nltk.tree import Tree
-from match import match
 from typing import List, Callable, Tuple, Any, Match
-
+from match import match
 
 def get_page_html(title: str) -> str:
-    """Gets html of a wikipedia page
-
-    Args:
-        title - title of the page
-
-    Returns:
-        html of the page
-    """
     results = wikipedia.search(title)
     return WikipediaPage(results[0]).html()
 
-
 def get_first_infobox_text(html: str) -> str:
-    """Gets first infobox html from a Wikipedia page (summary box)
-
-    Args:
-        html - the full html of the page
-
-    Returns:
-        html of just the first infobox
-    """
     soup = BeautifulSoup(html, "html.parser")
     results = soup.find_all(class_="infobox")
-
     if not results:
         raise LookupError("Page has no infobox")
     return results[0].text
 
-
 def clean_text(text: str) -> str:
-    """Cleans given text removing non-ASCII characters and duplicate spaces & newlines
-
-    Args:
-        text - text to clean
-
-    Returns:
-        cleaned text
-    """
     only_ascii = "".join([char if char in string.printable else " " for char in text])
     no_dup_spaces = re.sub(" +", " ", only_ascii)
     no_dup_newlines = re.sub("\n+", "\n", no_dup_spaces)
     return no_dup_newlines
 
-
-def get_match(
-    text: str,
-    pattern: str,
-    error_text: str = "Page doesn't appear to have the property you're expecting",
-) -> Match:
-    """Finds regex matches for a pattern
-
-    Args:
-        text - text to search within
-        pattern - pattern to attempt to find within text
-        error_text - text to display if pattern fails to match
-
-    Returns:
-        text that matches
-    """
+def get_match(text: str, pattern: str, error_text: str = "Page doesn't appear to have the property you're expecting") -> Match:
     p = re.compile(pattern, re.DOTALL | re.IGNORECASE)
     match = p.search(text)
-
     if not match:
         raise AttributeError(error_text)
     return match
 
-
 def get_polar_radius(planet_name: str) -> str:
-    """Gets the radius of the given planet
-
-    Args:
-        planet_name - name of the planet to get radius of
-
-    Returns:
-        radius of the given planet
-    """
     infobox_text = clean_text(get_first_infobox_text(get_page_html(planet_name)))
     pattern = r"(?:Polar radius.*?)(?: ?[\d]+ )?(?P<radius>[\d,.]+)(?:.*?)km"
     error_text = "Page infobox has no polar radius information"
     match = get_match(infobox_text, pattern, error_text)
-
     return match.group("radius")
 
-
 def get_birth_date(name: str) -> str:
-    """Gets birth date of the given person
-
-    Args:
-        name - name of the person
-
-    Returns:
-        birth date of the given person
-    """
     infobox_text = clean_text(get_first_infobox_text(get_page_html(name)))
     pattern = r"(?:Born\D*)(?P<birth>\d{4}-\d{2}-\d{2})"
-    error_text = (
-        "Page infobox has no birth information (at least none in xxxx-xx-xx format)"
-    )
+    error_text = "Page infobox has no birth information (at least none in xxxx-xx-xx format)"
     match = get_match(infobox_text, pattern, error_text)
-
     return match.group("birth")
 
+def get_country_capital(country_name: str) -> str:
+    try:
+        infobox_text = clean_text(get_first_infobox_text(get_page_html(country_name)))
+    except Exception as e:
+        raise AttributeError(f"Could not retrieve page or infobox for {country_name}: {e}")
+    pattern = r"Capital\s*(?:\[\d+\])?\s*(?P<capital>[A-Za-z\s,\(\)\-]+)"
+    match = get_match(infobox_text, pattern, "Page infobox has no capital city information")
+    return match.group("capital").strip()
 
-# below are a set of actions. Each takes a list argument and returns a list of answers
-# according to the action and the argument. It is important that each function returns a
-# list of the answer(s) and not just the answer itself.
+def get_country_population(country_name: str) -> str:
+    try:
+        infobox_text = clean_text(get_first_infobox_text(get_page_html(country_name)))
+    except Exception as e:
+        raise AttributeError(f"Could not retrieve page or infobox for {country_name}: {e}")
+    pattern = r"Population(?:\s*\([^)]*\))?\s*(?:\[\d+\])?.*?(?P<population>\d{1,3}(?:,\d{3})+)"
+    match = get_match(infobox_text, pattern, "Page infobox has no population information")
+    return match.group("population").replace(",", "")
 
+def get_country_languages(country_name: str) -> List[str]:
+    try:
+        infobox_text = clean_text(get_first_infobox_text(get_page_html(country_name)))
+    except Exception as e:
+        raise AttributeError(f"Could not retrieve page or infobox for {country_name}: {e}")
+    pattern = r"Official languages?\s*(?:\[\d+\])?\s*(?P<languages>[A-Za-z,\s\(\)\-]+)"
+    match = get_match(infobox_text, pattern, "Page infobox has no official language information")
+    languages_raw = match.group("languages")
+    languages_list = re.split(r",\s*|\s+and\s+", languages_raw)
+    return [lang.strip() for lang in languages_list if lang.strip()]
 
 def birth_date(matches: List[str]) -> List[str]:
-    """Returns birth date of named person in matches
-
-    Args:
-        matches - match from pattern of person's name to find birth date of
-
-    Returns:
-        birth date of named person
-    """
     return [get_birth_date(" ".join(matches))]
 
-
 def polar_radius(matches: List[str]) -> List[str]:
-    """Returns polar radius of planet in matches
-
-    Args:
-        matches - match from pattern of planet to find polar radius of
-
-    Returns:
-        polar radius of planet
-    """
     return [get_polar_radius(matches[0])]
 
+def country_capital(matches: List[str]) -> List[str]:
+    try:
+        capital = get_country_capital(" ".join(matches))
+        return [f"The capital of {matches[0]} is {capital}"]
+    except AttributeError as e:
+        return [f"Could not find capital: {e}"]
 
-# dummy argument is ignored and doesn't matter
+def country_population(matches: List[str]) -> List[str]:
+    try:
+        pop = get_country_population(" ".join(matches))
+        return [f"The population of {matches[0]} is {pop}"]
+    except AttributeError as e:
+        return [f"Could not find population: {e}"]
+
+def country_languages(matches: List[str]) -> List[str]:
+    try:
+        languages = get_country_languages(" ".join(matches))
+        return [f"The official language(s) of {matches[0]}: {', '.join(languages)}"]
+    except AttributeError as e:
+        return [f"Could not find language info: {e}"]
+
 def bye_action(dummy: List[str]) -> None:
     raise KeyboardInterrupt
 
-
-# type aliases to make pa_list type more readable, could also have written:
-# pa_list: List[Tuple[List[str], Callable[[List[str]], List[Any]]]] = [...]
 Pattern = List[str]
 Action = Callable[[List[str]], List[Any]]
 
-# The pattern-action list for the natural language query system. It must be declared
-# here, after all of the function definitions
 pa_list: List[Tuple[Pattern, Action]] = [
     ("when was % born".split(), birth_date),
+    ("what is %'s birth date".split(), birth_date),
     ("what is the polar radius of %".split(), polar_radius),
-    (["bye"], bye_action),
+    ("how big is %".split(), polar_radius),
+    ("what is the capital of %".split(), country_capital),
+    ("how many people live in %".split(), country_population),
+    ("what language is spoken in %".split(), country_languages),
+    ("what are the official languages of %".split(), country_languages),
+    (["bye"], bye_action)
 ]
 
-
+#what is the capital of tanzania
+#how many people live in mexico
+#what language is spoken in germany
 def search_pa_list(src: List[str]) -> List[str]:
-    """Takes source, finds matching pattern and calls corresponding action. If it finds
-    a match but has no answers it returns ["No answers"]. If it finds no match it
-    returns ["I don't understand"].
-
-    Args:
-        source - a phrase represented as a list of words (strings)
-
-    Returns:
-        a list of answers. Will be ["I don't understand"] if it finds no matches and
-        ["No answers"] if it finds a match but no answers
-    """
     for pat, act in pa_list:
         mat = match(pat, src)
         if mat is not None:
             answer = act(mat)
             return answer if answer else ["No answers"]
-
     return ["I don't understand"]
 
-
 def query_loop() -> None:
-    """The simple query loop. The try/except structure is to catch Ctrl-C or Ctrl-D
-    characters and exit gracefully"""
-    print("Welcome to the movie database!\n")
     while True:
         try:
             print()
@@ -192,12 +136,8 @@ def query_loop() -> None:
             answers = search_pa_list(query)
             for ans in answers:
                 print(ans)
-
         except (KeyboardInterrupt, EOFError):
             break
-
     print("\nSo long!\n")
 
-
-# uncomment the next line once you've implemented everything are ready to try it out
 query_loop()
